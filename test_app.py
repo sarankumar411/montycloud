@@ -1,11 +1,8 @@
 import pytest
-import json
-import os
 from io import BytesIO
 from unittest.mock import patch, MagicMock
-from app import app, storage_service, metadata_service
-from services import ImageStorageService, ImageMetadataService, AWSClientFactory
-from config import S3_BUCKET_NAME, DYNAMODB_TABLE_NAME
+from app import app
+from services import ImageStorageService, ImageMetadataService
 
 
 @pytest.fixture

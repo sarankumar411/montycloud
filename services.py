@@ -1,9 +1,9 @@
 import boto3
+from botocore.exceptions import ClientError
 from config import LOCALSTACK_ENDPOINT, AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
 from typing import Optional, List, Dict, Any
 import uuid
 from datetime import datetime
-import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -72,14 +72,19 @@ class ImageStorageService:
             self.s3_client.head_bucket(Bucket=self.bucket_name)
             logger.info(f"Bucket {self.bucket_name} already exists")
             return True
-        except:
-            try:
-                self.s3_client.create_bucket(Bucket=self.bucket_name)
-                logger.info(f"Created bucket {self.bucket_name}")
-                return True
-            except Exception as e:
-                logger.error(f"Error creating bucket: {str(e)}")
-                return False
+        except ClientError as e:
+            # If the bucket doesn't exist, create it. Otherwise log and fail.
+            error_code = e.response.get('Error', {}).get('Code')
+            if error_code in ("404", "NoSuchBucket", "NotFound"):
+                try:
+                    self.s3_client.create_bucket(Bucket=self.bucket_name)
+                    logger.info(f"Created bucket {self.bucket_name}")
+                    return True
+                except ClientError as ce:
+                    logger.error(f"Error creating bucket: {str(ce)}")
+                    return False
+            logger.error(f"Error checking bucket existence: {str(e)}")
+            return False
     
     def upload_image(self, image_data: bytes, file_name: str) -> Optional[str]:
         """
@@ -147,7 +152,7 @@ class ImageMetadataService:
             self.dynamodb.Table(self.table_name).table_status
             logger.info(f"Table {self.table_name} already exists")
             return True
-        except:
+        except ClientError:
             try:
                 table = self.dynamodb.create_table(
                     TableName=self.table_name,
@@ -196,7 +201,7 @@ class ImageMetadataService:
                 table.wait_until_exists()
                 logger.info(f"Created table {self.table_name}")
                 return True
-            except Exception as e:
+            except ClientError as e:
                 logger.error(f"Error creating table: {str(e)}")
                 return False
     
