@@ -1,8 +1,0 @@
-[tool.ruff]
-line-length = 88
-target-version = "py312"
-exclude = [".git", "__pycache__", "venv", "build"]
-# extend-ignore removed to maintain compatibility with installed ruff
-
-[tool.ruff.per-file-ignores]
-"test_app.py" = ["D"]

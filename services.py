@@ -1,6 +1,6 @@
 import boto3
 from botocore.exceptions import ClientError
-from config import LOCALSTACK_ENDPOINT, AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+from config import AWS_REGION
 from typing import Optional, List, Dict, Any
 import uuid
 from datetime import datetime
@@ -22,11 +22,7 @@ class AWSClientFactory:
         if AWSClientFactory._s3_client is None:
             AWSClientFactory._s3_client = boto3.client(
                 's3',
-                endpoint_url=LOCALSTACK_ENDPOINT,
-                region_name=AWS_REGION,
-                aws_access_key_id=AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-                use_ssl=False
+                region_name=AWS_REGION
             )
         return AWSClientFactory._s3_client
     
@@ -36,11 +32,7 @@ class AWSClientFactory:
         if AWSClientFactory._dynamodb_client is None:
             AWSClientFactory._dynamodb_client = boto3.client(
                 'dynamodb',
-                endpoint_url=LOCALSTACK_ENDPOINT,
-                region_name=AWS_REGION,
-                aws_access_key_id=AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-                use_ssl=False
+                region_name=AWS_REGION
             )
         return AWSClientFactory._dynamodb_client
     
@@ -50,11 +42,7 @@ class AWSClientFactory:
         if AWSClientFactory._dynamodb_resource is None:
             AWSClientFactory._dynamodb_resource = boto3.resource(
                 'dynamodb',
-                endpoint_url=LOCALSTACK_ENDPOINT,
-                region_name=AWS_REGION,
-                aws_access_key_id=AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-                use_ssl=False
+                region_name=AWS_REGION
             )
         return AWSClientFactory._dynamodb_resource
 
