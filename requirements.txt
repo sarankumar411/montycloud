@@ -4,3 +4,7 @@ Flask>=3.0.0
 python-dotenv==1.0.0
 Pillow==10.0.0
 flasgger
+ruff
+pytest
+pytest-cov
+moto[s3,dynamodb]==4.1.10
