@@ -1,6 +1,6 @@
 boto3==1.26.137
 botocore==1.29.137
-Flask==2.3.2
+Flask>=3.0.0
 python-dotenv==1.0.0
 Pillow==10.0.0
 flasgger
