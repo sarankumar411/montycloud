@@ -2,13 +2,14 @@ from flask import Flask, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 import logging
 from config import (
-    S3_BUCKET_NAME, DYNAMODB_TABLE_NAME, MAX_FILE_SIZE, 
+    S3_BUCKET_NAME, DYNAMODB_TABLE_NAME, MAX_FILE_SIZE,
     ALLOWED_EXTENSIONS, DEBUG
 )
 from services import ImageStorageService, ImageMetadataService
 import uuid
 from functools import wraps
 from io import BytesIO
+from flasgger import Swagger
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -16,6 +17,42 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
+
+swagger_config = {
+    "headers": [],
+    "specs": [
+        {
+            "endpoint": "apispec",
+            "route": "/apispec.json",
+            "rule_filter": lambda rule: True,
+            "model_filter": lambda tag: True,
+        }
+    ],
+    "static_url_path": "/flasgger_static",
+    "swagger_ui": True,
+    "specs_route": "/swagger/",
+}
+
+swagger_template = {
+    "info": {
+        "title": "Image Upload Service API",
+        "description": "Instagram-like image upload service backed by AWS S3 and DynamoDB",
+        "version": "1.0.0",
+    },
+    "securityDefinitions": {
+        "UserID": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-User-ID",
+            "description": "User identifier header required for all endpoints"
+        }
+    },
+    "security": [{"UserID": []}],
+    "consumes": ["application/json", "multipart/form-data"],
+    "produces": ["application/json"],
+}
+
+Swagger(app, config=swagger_config, template=swagger_template)
 
 # Initialize services
 storage_service = ImageStorageService(S3_BUCKET_NAME)
@@ -51,7 +88,21 @@ def initialize_aws_resources():
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
+    """
+    Health check endpoint
+    ---
+    tags:
+      - Health
+    responses:
+      200:
+        description: Service is healthy
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: healthy
+    """
     return jsonify({'status': 'healthy'}), 200
 
 
@@ -59,21 +110,49 @@ def health_check():
 @validate_request()
 def upload_image():
     """
-    Upload image with metadata
-    
-    Required Headers:
-        X-User-ID: User identifier
-    
-    Form Data:
-        file: Image file (required)
-        title: Image title (optional)
-        description: Image description (optional)
-        tags: Comma-separated tags (optional)
-    
-    Returns:
-        201: Image uploaded successfully with metadata
-        400: Bad request (missing file, invalid format, etc.)
-        413: File too large
+    Upload an image with metadata
+    ---
+    tags:
+      - Images
+    consumes:
+      - multipart/form-data
+    parameters:
+      - name: X-User-ID
+        in: header
+        required: true
+        type: string
+        description: User identifier
+      - name: file
+        in: formData
+        required: true
+        type: file
+        description: Image file (jpg, jpeg, png, gif, webp - max 10MB)
+      - name: title
+        in: formData
+        required: false
+        type: string
+        description: Image title
+      - name: description
+        in: formData
+        required: false
+        type: string
+        description: Image description
+      - name: tags
+        in: formData
+        required: false
+        type: string
+        description: Comma-separated tags (e.g. nature,sunset,beach)
+    responses:
+      201:
+        description: Image uploaded successfully
+      400:
+        description: Bad request - missing file or invalid format
+      401:
+        description: Missing X-User-ID header
+      413:
+        description: File too large (max 10MB)
+      500:
+        description: Internal server error
     """
     try:
         user_id = request.headers.get('X-User-ID')
@@ -131,21 +210,54 @@ def upload_image():
 @validate_request()
 def list_images():
     """
-    List images with filters
-    
-    Required Headers:
-        X-User-ID: User identifier
-    
-    Query Parameters:
-        filter_by: 'user' (default) or 'tags' or 'title'
-        user_id: User ID to filter by (required if filter_by=user)
-        tags: Comma-separated tags to filter by (required if filter_by=tags)
-        title: Title to search by (required if filter_by=title)
-        limit: Number of results (default: 10, max: 100)
-    
-    Returns:
-        200: List of images
-        400: Bad request (invalid parameters)
+    List images with optional filters
+    ---
+    tags:
+      - Images
+    parameters:
+      - name: X-User-ID
+        in: header
+        required: true
+        type: string
+        description: User identifier
+      - name: filter_by
+        in: query
+        required: false
+        type: string
+        enum: [user, tags, title]
+        default: user
+        description: Filter type
+      - name: user_id
+        in: query
+        required: false
+        type: string
+        description: User ID to filter by (used when filter_by=user)
+      - name: tags
+        in: query
+        required: false
+        type: string
+        description: Comma-separated tags (used when filter_by=tags)
+      - name: title
+        in: query
+        required: false
+        type: string
+        description: Title to search (used when filter_by=title)
+      - name: limit
+        in: query
+        required: false
+        type: integer
+        default: 10
+        maximum: 100
+        description: Number of results to return
+    responses:
+      200:
+        description: List of images
+      400:
+        description: Invalid parameters
+      401:
+        description: Missing X-User-ID header
+      500:
+        description: Internal server error
     """
     try:
         user_id = request.headers.get('X-User-ID')
@@ -193,14 +305,30 @@ def list_images():
 @validate_request()
 def get_image(image_id):
     """
-    Download/view image
-    
-    Required Headers:
-        X-User-ID: User identifier
-    
-    Returns:
-        200: Image file
-        404: Image not found
+    Download/view an image by ID
+    ---
+    tags:
+      - Images
+    parameters:
+      - name: X-User-ID
+        in: header
+        required: true
+        type: string
+        description: User identifier
+      - name: image_id
+        in: path
+        required: true
+        type: string
+        description: Image UUID
+    responses:
+      200:
+        description: Image file (binary)
+      401:
+        description: Missing X-User-ID header
+      404:
+        description: Image not found
+      500:
+        description: Internal server error
     """
     try:
         user_id = request.headers.get('X-User-ID')
@@ -232,14 +360,30 @@ def get_image(image_id):
 @validate_request()
 def delete_image(image_id):
     """
-    Delete image
-    
-    Required Headers:
-        X-User-ID: User identifier
-    
-    Returns:
-        200: Image deleted successfully
-        404: Image not found
+    Delete an image and its metadata
+    ---
+    tags:
+      - Images
+    parameters:
+      - name: X-User-ID
+        in: header
+        required: true
+        type: string
+        description: User identifier
+      - name: image_id
+        in: path
+        required: true
+        type: string
+        description: Image UUID
+    responses:
+      200:
+        description: Image deleted successfully
+      401:
+        description: Missing X-User-ID header
+      404:
+        description: Image not found
+      500:
+        description: Internal server error
     """
     try:
         user_id = request.headers.get('X-User-ID')
@@ -269,18 +413,48 @@ def delete_image(image_id):
 def update_image_metadata(image_id):
     """
     Update image metadata
-    
-    Required Headers:
-        X-User-ID: User identifier
-    
-    JSON Body:
-        title: Updated title (optional)
-        description: Updated description (optional)
-        tags: Updated tags list (optional)
-    
-    Returns:
-        200: Metadata updated successfully
-        404: Image not found
+    ---
+    tags:
+      - Images
+    consumes:
+      - application/json
+    parameters:
+      - name: X-User-ID
+        in: header
+        required: true
+        type: string
+        description: User identifier
+      - name: image_id
+        in: path
+        required: true
+        type: string
+        description: Image UUID
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          properties:
+            title:
+              type: string
+              example: My Updated Title
+            description:
+              type: string
+              example: Updated description
+            tags:
+              type: array
+              items:
+                type: string
+              example: [nature, sunset]
+    responses:
+      200:
+        description: Metadata updated successfully
+      401:
+        description: Missing X-User-ID header
+      404:
+        description: Image not found
+      500:
+        description: Internal server error
     """
     try:
         user_id = request.headers.get('X-User-ID')
