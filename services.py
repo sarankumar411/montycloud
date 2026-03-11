@@ -65,7 +65,14 @@ class ImageStorageService:
             error_code = e.response.get('Error', {}).get('Code')
             if error_code in ("404", "NoSuchBucket", "NotFound"):
                 try:
-                    self.s3_client.create_bucket(Bucket=self.bucket_name)
+                    # For regions other than us-east-1, LocationConstraint is required
+                    if AWS_REGION == 'us-east-1':
+                        self.s3_client.create_bucket(Bucket=self.bucket_name)
+                    else:
+                        self.s3_client.create_bucket(
+                            Bucket=self.bucket_name,
+                            CreateBucketConfiguration={'LocationConstraint': AWS_REGION}
+                        )
                     logger.info(f"Created bucket {self.bucket_name}")
                     return True
                 except ClientError as ce:
