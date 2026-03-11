@@ -2,7 +2,7 @@
 
 ## Overview
 
-This is an **Instagram-like image upload service** built with Flask, backed by AWS S3 for image storage and DynamoDB for metadata management.
+This is an **Instagram-like image upload service** built with Flask, backed by AWS S3 for image storage and DynamoDB for metadata management. **Deployable via AWS SAM** for serverless Lambda execution.
 
 ---
 
@@ -15,7 +15,13 @@ This is an **Instagram-like image upload service** built with Flask, backed by A
                                 │
                                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Flask Application (app.py)                  │
+│                      API Gateway (SAM)                          │
+│           Routes defined in template.yaml                       │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              Lambda Function / Flask App (app.py)               │
 │  ┌─────────────────┐  ┌──────────────────┐  ┌────────────────┐ │
 │  │  Health Check   │  │    REST APIs     │  │  Swagger UI    │ │
 │  │   /health       │  │  /api/v1/images  │  │   /swagger/    │ │
@@ -33,6 +39,7 @@ This is an **Instagram-like image upload service** built with Flask, backed by A
 ┌─────────────────────────┐   ┌─────────────────────────────────┐
 │       AWS S3            │   │        AWS DynamoDB             │
 │  (Image Binary Storage) │   │    (Image Metadata Store)       │
+│   (SAM provisioned)     │   │      (SAM provisioned)          │
 └─────────────────────────┘   └─────────────────────────────────┘
 ```
 
@@ -42,12 +49,13 @@ This is an **Instagram-like image upload service** built with Flask, backed by A
 
 | File | Purpose |
 |------|---------|
-| `app.py` | Flask application with REST API endpoints |
+| `app.py` | Flask application with REST API endpoints + Lambda handler |
 | `services.py` | AWS service layer (S3 & DynamoDB operations) |
 | `config.py` | Environment configuration & constants |
+| `template.yaml` | **AWS SAM template** - Infrastructure as Code |
 | `test_app.py` | Comprehensive pytest test suite |
 | `requirements.txt` | Python dependencies |
-| `run.sh` | Application startup script |
+| `run.sh` | Application startup & test script |
 
 ---
 
@@ -69,7 +77,42 @@ ALLOWED_EXTENSIONS  = {'jpg', 'jpeg', 'png', 'gif', 'webp'}
 
 ---
 
-### 2. Service Layer (`services.py`)
+### 2. AWS SAM Template (`template.yaml`)
+
+Infrastructure-as-Code defining all AWS resources:
+
+```yaml
+Resources:
+  ImageBucket:           # S3 bucket with encryption & CORS
+  ImagesMetadataTable:   # DynamoDB with PAY_PER_REQUEST billing
+  ImageUploadFunction:   # Lambda function with API Gateway events
+  ImageApi:              # API Gateway with binary media support
+```
+
+**Key Features:**
+- **S3 Bucket:** Server-side encryption (AES256), public access blocked
+- **DynamoDB:** PAY_PER_REQUEST billing, Point-in-Time Recovery enabled
+- **Lambda:** Auto-generated IAM policies via SAM policy templates
+- **API Gateway:** CORS configured, binary media types for images
+
+**Deployment:**
+```bash
+sam build && sam deploy --guided
+```
+
+**Parameters:**
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `Environment` | `dev` | Deployment stage (dev/staging/prod) |
+
+**Outputs:**
+- `ApiEndpoint` - API Gateway URL
+- `ImageBucketName` - S3 bucket name
+- `DynamoDBTableName` - DynamoDB table name
+
+---
+
+### 3. Service Layer (`services.py`)
 
 #### AWSClientFactory (Singleton Pattern)
 ```python
@@ -86,13 +129,19 @@ class AWSClientFactory:
 
 | Method | Purpose |
 |--------|---------|
-| `create_bucket_if_not_exists()` | Auto-provisions S3 bucket on first request |
-| `upload_image(data, filename)` | Uploads image with UUID-prefixed key |
+| `create_bucket_if_not_exists()` | Auto-provisions S3 bucket (local dev only) |
+| `upload_image(data, filename, image_id)` | Uploads image using provided UUID |
 | `delete_image(s3_key)` | Removes image from S3 |
 | `get_image(s3_key)` | Downloads image binary |
 | `generate_presigned_url(s3_key)` | Creates temporary signed URL (1hr default) |
 
-**S3 Key Structure:** `images/{uuid}/{filename}` - Ensures unique paths per upload
+**S3 Key Structure:** `images/{image_id}/{filename}`
+
+**Single UUID Design:** The same `image_id` is used for:
+- S3 key path: `images/{image_id}/{filename}`
+- DynamoDB partition key: `image_id`
+
+This ensures direct traceability between S3 objects and their metadata.
 
 #### ImageMetadataService (DynamoDB Operations)
 

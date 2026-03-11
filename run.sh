@@ -12,8 +12,12 @@ case "$1" in
         echo "Running tests..."
         python -m pytest test_app.py -v --tb=short
         ;;
+    lint)
+        echo "Running ruff linter..."
+        ruff check .
+        ;;
     *)
-        echo "Usage: ./run.sh {start|test}"
+        echo "Usage: ./run.sh {start|test|lint}"
         exit 1
         ;;
 esac

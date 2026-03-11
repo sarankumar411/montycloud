@@ -31,6 +31,10 @@ swagger_config = {
     "static_url_path": "/flasgger_static",
     "swagger_ui": True,
     "specs_route": "/swagger/",
+    "swagger_ui_config": {
+        "docExpansion": "list",
+        "defaultModelsExpandDepth": -1,
+    }
 }
 
 swagger_template = {
@@ -494,22 +498,6 @@ def not_found(error):
 def internal_error(error):
     """Handle 500 error"""
     return jsonify({'error': 'Internal server error'}), 500
-
-
-# Lambda handler for AWS SAM deployment
-def lambda_handler(event, context):
-    """
-    AWS Lambda handler using awsgi to bridge API Gateway events to Flask
-    """
-    try:
-        import awsgi
-        return awsgi.response(app, event, context, base64_content_types={"image/jpeg", "image/png", "image/gif", "image/webp"})
-    except ImportError:
-        # Fallback error if awsgi is not installed
-        return {
-            'statusCode': 500,
-            'body': '{"error": "awsgi package not installed"}'
-        }
 
 
 if __name__ == '__main__':
