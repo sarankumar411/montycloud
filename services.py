@@ -81,13 +81,17 @@ class ImageStorageService:
             logger.error(f"Error checking bucket existence: {str(e)}")
             return False
     
-    def upload_image(self, image_data: bytes, file_name: str) -> Optional[str]:
+    def upload_image(self, image_data: bytes, file_name: str, image_id: str) -> Optional[str]:
         """
         Upload image to S3
+        Args:
+            image_data: Binary image data
+            file_name: Original filename
+            image_id: UUID to use for the S3 key path
         Returns: S3 object key if successful, None otherwise
         """
         try:
-            s3_key = f"images/{uuid.uuid4()}/{file_name}"
+            s3_key = f"images/{image_id}/{file_name}"
             self.s3_client.put_object(
                 Bucket=self.bucket_name,
                 Key=s3_key,

@@ -1,0 +1,174 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Image Upload Service - Instagram-like image storage with S3 and DynamoDB
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.11
+    MemorySize: 256
+    Environment:
+      Variables:
+        AWS_REGION: !Ref AWS::Region
+        S3_BUCKET_NAME: !Ref ImageBucket
+        DYNAMODB_TABLE_NAME: !Ref ImagesMetadataTable
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Deployment environment
+
+Resources:
+  # S3 Bucket for Image Storage
+  ImageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub image-uploads-${Environment}-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+              - PUT
+              - POST
+              - DELETE
+            AllowedOrigins:
+              - '*'
+            MaxAge: 3600
+
+  # DynamoDB Table for Image Metadata
+  ImagesMetadataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub images-metadata-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: image_id
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+        - AttributeName: title
+          AttributeType: S
+      KeySchema:
+        - AttributeName: image_id
+          KeyType: HASH
+        - AttributeName: user_id
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: user_id-created_at-index
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: title-created_at-index
+          KeySchema:
+            - AttributeName: title
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # Lambda Function for Image Upload Service
+  ImageUploadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub image-upload-service-${Environment}
+      Handler: app.lambda_handler
+      CodeUri: .
+      Description: Image upload service API handler
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref ImageBucket
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ImagesMetadataTable
+      Events:
+        HealthCheck:
+          Type: Api
+          Properties:
+            Path: /health
+            Method: GET
+            RestApiId: !Ref ImageApi
+        UploadImage:
+          Type: Api
+          Properties:
+            Path: /api/v1/images/upload
+            Method: POST
+            RestApiId: !Ref ImageApi
+        ListImages:
+          Type: Api
+          Properties:
+            Path: /api/v1/images
+            Method: GET
+            RestApiId: !Ref ImageApi
+        GetImage:
+          Type: Api
+          Properties:
+            Path: /api/v1/images/{image_id}
+            Method: GET
+            RestApiId: !Ref ImageApi
+        DeleteImage:
+          Type: Api
+          Properties:
+            Path: /api/v1/images/{image_id}
+            Method: DELETE
+            RestApiId: !Ref ImageApi
+        UpdateImage:
+          Type: Api
+          Properties:
+            Path: /api/v1/images/{image_id}
+            Method: PUT
+            RestApiId: !Ref ImageApi
+
+  # API Gateway
+  ImageApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub image-upload-api-${Environment}
+      StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-User-ID,Authorization'"
+        AllowOrigin: "'*'"
+      BinaryMediaTypes:
+        - 'image/*'
+        - 'multipart/form-data'
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${ImageApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}
+  
+  ImageBucketName:
+    Description: S3 bucket name for image storage
+    Value: !Ref ImageBucket
+  
+  DynamoDBTableName:
+    Description: DynamoDB table name for image metadata
+    Value: !Ref ImagesMetadataTable
+  
+  LambdaFunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt ImageUploadFunction.Arn

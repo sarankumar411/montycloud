@@ -8,8 +8,12 @@ case "$1" in
         echo "Starting Flask app..."
         python app.py
         ;;
+    test)
+        echo "Running tests..."
+        python -m pytest test_app.py -v --tb=short
+        ;;
     *)
-        echo "Usage: ./run.sh start"
+        echo "Usage: ./run.sh {start|test}"
         exit 1
         ;;
 esac

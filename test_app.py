@@ -430,15 +430,16 @@ class TestImageStorageService:
     def test_upload_image_returns_s3_key(self):
         self._create_bucket()
         service = self._make_service()
-        key = service.upload_image(b'image bytes', 'photo.jpg')
+        key = service.upload_image(b'image bytes', 'photo.jpg', 'test-uuid-123')
         assert key is not None
         assert 'photo.jpg' in key
+        assert 'test-uuid-123' in key
 
     @mock_s3
     def test_upload_image_stores_retrievable_data(self):
         self._create_bucket()
         service = self._make_service()
-        key = service.upload_image(b'hello world', 'test.jpg')
+        key = service.upload_image(b'hello world', 'test.jpg', 'test-uuid-456')
         data = service.get_image(key)
         assert data == b'hello world'
 

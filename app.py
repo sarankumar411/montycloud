@@ -77,13 +77,8 @@ def allowed_file(filename: str) -> bool:
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-@app.before_request
-def initialize_aws_resources():
-    """Initialize AWS resources on first request"""
-    if not hasattr(app, 'resources_initialized'):
-        storage_service.create_bucket_if_not_exists()
-        metadata_service.create_table_if_not_exists()
-        app.resources_initialized = True
+# Note: AWS resources (S3 bucket, DynamoDB table) are now provisioned via SAM template.yaml
+# No runtime resource creation needed when deployed with SAM
 
 
 @app.route('/health', methods=['GET'])
@@ -173,15 +168,17 @@ def upload_image():
         if len(file_data) > MAX_FILE_SIZE:
             return jsonify({'error': f'File too large. Max size: {MAX_FILE_SIZE / (1024*1024)}MB'}), 413
         
-        # Upload to S3
+        # Generate single UUID for both S3 key and DynamoDB record
+        image_id = str(uuid.uuid4())
+        
+        # Upload to S3 using the same image_id
         filename = secure_filename(file.filename)
-        s3_key = storage_service.upload_image(file_data, filename)
+        s3_key = storage_service.upload_image(file_data, filename, image_id)
         
         if not s3_key:
             return jsonify({'error': 'Failed to upload image to storage'}), 500
         
-        # Save metadata to DynamoDB
-        image_id = str(uuid.uuid4())
+        # Save metadata to DynamoDB with the same image_id
         title = request.form.get('title', 'Untitled')
         description = request.form.get('description', '')
         tags = [tag.strip() for tag in request.form.get('tags', '').split(',') if tag.strip()]
@@ -497,6 +494,22 @@ def not_found(error):
 def internal_error(error):
     """Handle 500 error"""
     return jsonify({'error': 'Internal server error'}), 500
+
+
+# Lambda handler for AWS SAM deployment
+def lambda_handler(event, context):
+    """
+    AWS Lambda handler using awsgi to bridge API Gateway events to Flask
+    """
+    try:
+        import awsgi
+        return awsgi.response(app, event, context, base64_content_types={"image/jpeg", "image/png", "image/gif", "image/webp"})
+    except ImportError:
+        # Fallback error if awsgi is not installed
+        return {
+            'statusCode': 500,
+            'body': '{"error": "awsgi package not installed"}'
+        }
 
 
 if __name__ == '__main__':
